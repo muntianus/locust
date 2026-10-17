@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Python Swarm & Locust Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run unit and HTTP integration tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Smoke test standalone Swarm HTTP API
+        run: |
+          python3 -m swarm_service.server &
+          SERVER_PID=$!
+          sleep 1
+          curl -fsS http://127.0.0.1:4070/health | grep -q '"perfops-locust-swarm"'
+          curl -fsS http://127.0.0.1:4070/api/v1/personas | grep -q '"GloblexShopBuyerUser"'
+          curl -fsS -X POST http://127.0.0.1:4070/api/v1/swarm/simulate \
+            -H "Content-Type: application/json" \
+            -d '{"vus": 50, "duration_sec": 15, "target_host": "https://api.globlex.pro"}' \
+            | grep -q '"launchgate-core/v1"'
+          kill $SERVER_PID
