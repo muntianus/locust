@@ -58,3 +58,9 @@ locust -f locustfile.py --headless -u 100 -r 10 -t 30s --host https://api.globle
 ```bash
 python3 -m unittest discover -s tests -v
 ```
+
+## Contact / Support
+
+PerfOps official Telegram contact: [@perfops_ai_manager](https://t.me/perfops_ai_manager).
+
+For security vulnerabilities, use private vulnerability reporting rather than public Telegram messages.
