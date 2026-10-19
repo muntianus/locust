@@ -56,8 +56,35 @@ locust -f locustfile.py --headless -u 100 -r 10 -t 30s --host https://api.globle
 ## Testing
 
 ```bash
+# Unit + HTTP integration tests
 python3 -m unittest discover -s tests -v
+
+# End-to-end smoke: boots a local mock target + the swarm service on loopback
+python3 .github/scripts/ci_smoke.py
+
+# Optional: smoke a real environment instead of the local mock
+TARGET_HOST=https://api.globlex.pro python3 .github/scripts/ci_smoke.py
 ```
+
+The smoke driver (`.github/scripts/ci_smoke.py`) is offline by default: it starts
+`tools/mock_target.py`, which answers every route in `locustfile.PERSONA_SPECS` with
+`200 OK`, then runs the swarm in both `deterministic` and `live_probe` modes against
+`http://127.0.0.1:<port>`. No external domain is contacted unless `TARGET_HOST` (or the
+k6-style alias `__ENV.TARGET_HOST`) is set. Ports are ephemeral, so the smoke can run on
+the same host as the production service (`:4070`).
+
+Mock target, standalone:
+
+```bash
+python3 tools/mock_target.py --port 18080            # serve on :18080
+python3 tools/mock_target.py --port 0 --print-port    # ephemeral port
+python3 tools/mock_target.py --delay-ms 250           # emulate a slow target
+```
+
+Smoke knobs (all optional): `SMOKE_VUS` (default `10`), `SMOKE_DURATION_SEC` (`5`),
+`SMOKE_SLO_P95_MS` (`5000`), `SMOKE_APDEX_T_MS` (`5000`), `SMOKE_READY_TIMEOUT_SEC` (`60`),
+`MOCK_DELAY_MS` (`0`). Thresholds are intentionally slack — the smoke is a liveness and
+contract check, not a latency benchmark.
 
 ## Contact / Support
 

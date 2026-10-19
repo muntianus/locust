@@ -10,6 +10,7 @@ jobs:
   test:
     name: Python Swarm & Locust Verification
     runs-on: [self-hosted, linux, x64, hostinger-vps]
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,16 +23,11 @@ jobs:
       - name: Run unit and HTTP integration tests
         run: python3 -m unittest discover -s tests -v
 
-      - name: Smoke test standalone Swarm HTTP API
-        run: |
-          # PORT=14070: the production VPS runs the swarm service on 4070 (muntianus-fleet.service)
-          PORT=14070 python3 -m swarm_service.server &
-          SERVER_PID=$!
-          sleep 1
-          curl -fsS http://127.0.0.1:14070/health | grep -q '"perfops-locust-swarm"'
-          curl -fsS http://127.0.0.1:14070/api/v1/personas | grep -q '"GloblexShopBuyerUser"'
-          curl -fsS -X POST http://127.0.0.1:14070/api/v1/swarm/simulate \
-            -H "Content-Type: application/json" \
-            -d '{"vus": 50, "duration_sec": 15, "target_host": "https://api.globlex.pro"}' \
-            | grep -q '"launchgate-core/v1"'
-          kill $SERVER_PID
+      - name: Smoke test swarm API against a local mock target
+        # Offline by default: the driver boots tools/mock_target.py on 127.0.0.1 and points
+        # the swarm at it. Ephemeral ports are used, so it cannot collide with the prod
+        # swarm service on 4070. Set the repo variable SMOKE_TARGET_HOST to smoke a real
+        # environment instead; no external domain is contacted unless it is set.
+        env:
+          TARGET_HOST: ${{ vars.SMOKE_TARGET_HOST }}
+        run: python3 .github/scripts/ci_smoke.py
