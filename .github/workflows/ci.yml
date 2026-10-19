@@ -24,12 +24,13 @@ jobs:
 
       - name: Smoke test standalone Swarm HTTP API
         run: |
-          python3 -m swarm_service.server &
+          # PORT=14070: the production VPS runs the swarm service on 4070 (muntianus-fleet.service)
+          PORT=14070 python3 -m swarm_service.server &
           SERVER_PID=$!
           sleep 1
-          curl -fsS http://127.0.0.1:4070/health | grep -q '"perfops-locust-swarm"'
-          curl -fsS http://127.0.0.1:4070/api/v1/personas | grep -q '"GloblexShopBuyerUser"'
-          curl -fsS -X POST http://127.0.0.1:4070/api/v1/swarm/simulate \
+          curl -fsS http://127.0.0.1:14070/health | grep -q '"perfops-locust-swarm"'
+          curl -fsS http://127.0.0.1:14070/api/v1/personas | grep -q '"GloblexShopBuyerUser"'
+          curl -fsS -X POST http://127.0.0.1:14070/api/v1/swarm/simulate \
             -H "Content-Type: application/json" \
             -d '{"vus": 50, "duration_sec": 15, "target_host": "https://api.globlex.pro"}' \
             | grep -q '"launchgate-core/v1"'
