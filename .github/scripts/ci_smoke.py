@@ -28,6 +28,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 from typing import Any, Dict, List, Optional, TextIO, Tuple
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -215,6 +216,8 @@ def run() -> None:
             print(f"    mock target ready at {target_host}")
 
         swarm_port = _free_port({mock_port} if mock_port else None)
+        # live_probe only targets allowlisted hosts; allow exactly the smoke target.
+        env["SWARM_ALLOWED_TARGET_HOSTS"] = urlparse(target_host).hostname or ""
         swarm_proc = _spawn(
             [sys.executable, "-m", "swarm_service.server"],
             {**env, "PORT": str(swarm_port), "HOST": "127.0.0.1"},
