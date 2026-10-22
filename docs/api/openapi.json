@@ -1,0 +1,338 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PerfOps Locust Swarm Controller",
+    "version": "1.0.0",
+    "description": "Persona-weighted B2B user swarm simulation with SLO / Apdex evaluation and LaunchGate payloads."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:4070",
+      "description": "Local / VPS loopback"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Liveness probe (no dependencies)",
+        "tags": [
+          "ops"
+        ],
+        "responses": {
+          "200": {
+            "description": "Service is up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "getHealthLegacy",
+        "summary": "Legacy alias of /health",
+        "tags": [
+          "ops"
+        ],
+        "responses": {
+          "200": {
+            "description": "Service is up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        },
+        "deprecated": true
+      }
+    },
+    "/api/v1/personas": {
+      "get": {
+        "operationId": "listPersonas",
+        "summary": "B2B traffic personas, weights and endpoints",
+        "tags": [
+          "swarm"
+        ],
+        "responses": {
+          "200": {
+            "description": "Personas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "personas"
+                  ],
+                  "properties": {
+                    "service": {
+                      "type": "string"
+                    },
+                    "total_weight": {
+                      "type": "number"
+                    },
+                    "personas": {
+                      "type": "object"
+                    },
+                    "integrated_domains": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/swarm/runs": {
+      "get": {
+        "operationId": "listSwarmRuns",
+        "summary": "Recent simulation runs, newest first (in-memory)",
+        "tags": [
+          "swarm"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum runs to return",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Runs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "count",
+                    "runs"
+                  ],
+                  "properties": {
+                    "service": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "runs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SwarmRun"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/swarm/simulate": {
+      "post": {
+        "operationId": "simulateSwarm",
+        "summary": "Simulate a persona-weighted B2B user swarm and evaluate SLO / Apdex",
+        "description": "`deterministic` (default) models latency offline. `live_probe` additionally sends one request per persona endpoint to `target_host`.",
+        "tags": [
+          "swarm"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulateRequest"
+              },
+              "example": {
+                "vus": 50,
+                "duration_sec": 30,
+                "seed": 42,
+                "mode": "deterministic"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Run report with LaunchGate payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SwarmRun"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": [
+          "status",
+          "service",
+          "version"
+        ],
+        "properties": {
+          "status": {
+            "const": "ok"
+          },
+          "service": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "SimulateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "vus": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 50
+          },
+          "duration_sec": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "default": 30
+          },
+          "target_host": {
+            "type": "string",
+            "format": "uri",
+            "default": "https://api.globlex.pro"
+          },
+          "persona_weights": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "deterministic",
+              "live_probe"
+            ],
+            "default": "deterministic"
+          },
+          "seed": {
+            "default": 42
+          },
+          "apdex_t_ms": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "slo_p95_ms": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        }
+      },
+      "SwarmRun": {
+        "type": "object",
+        "required": [
+          "run_id",
+          "mode",
+          "summary"
+        ],
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "deterministic",
+              "live_probe"
+            ]
+          },
+          "config": {
+            "type": "object"
+          },
+          "summary": {
+            "type": "object"
+          },
+          "personas": {
+            "type": "object"
+          },
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "launchgate": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}
