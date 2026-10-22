@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, NamedTuple, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
 from .controller import DEFAULT_APDEX_T_MS, DEFAULT_SLO_P95_MS, DEFAULT_TARGET_HOST, SwarmController
@@ -21,6 +21,24 @@ from .controller import DEFAULT_APDEX_T_MS, DEFAULT_SLO_P95_MS, DEFAULT_TARGET_H
 SERVICE_NAME = "perfops-locust-swarm"
 SERVICE_VERSION = "1.0.0"
 DEFAULT_PORT = 4070
+
+
+class Route(NamedTuple):
+    method: str
+    path: str
+    handler: str  # SwarmRequestHandler method name
+
+
+# Every route the service answers. tests/test_openapi_contract.py keeps this
+# table and docs/api/openapi.json in lockstep.
+ROUTES: Tuple[Route, ...] = (
+    Route("GET", "/health", "_get_health"),
+    Route("GET", "/api/health", "_get_health"),  # legacy alias
+    Route("GET", "/api/v1/personas", "_get_personas"),
+    Route("GET", "/api/v1/swarm/runs", "_get_runs"),
+    Route("POST", "/api/v1/swarm/simulate", "_post_simulate"),
+)
+_ROUTE_INDEX = {(r.method, r.path): r for r in ROUTES}
 
 
 class SwarmRequestHandler(BaseHTTPRequestHandler):
@@ -62,81 +80,73 @@ class SwarmRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:  # noqa: N802
-        parsed = urlparse(self.path)
-        path = parsed.path.rstrip("/") or "/"
-
-        if path in ("/health", "/api/health"):
-            self._send_json(
-                200,
-                {
-                    "status": "ok",
-                    "service": SERVICE_NAME,
-                    "version": SERVICE_VERSION,
-                },
-            )
-            return
-
-        if path == "/api/v1/personas":
-            self._send_json(200, self.controller.get_personas())
-            return
-
-        if path == "/api/v1/swarm/runs":
-            query = parse_qs(parsed.query)
-            limit = int(query.get("limit", ["25"])[0])
-            runs = self.controller.get_runs(limit=limit)
-            self._send_json(
-                200,
-                {
-                    "service": SERVICE_NAME,
-                    "count": len(runs),
-                    "runs": runs,
-                },
-            )
-            return
-
-        self._send_json(
-            404,
-            {
-                "error": "not_found",
-                "message": f"Route {path} not found",
-            },
-        )
+        self._dispatch("GET")
 
     def do_POST(self) -> None:  # noqa: N802
+        self._dispatch("POST")
+
+    def _dispatch(self, method: str) -> None:
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
-
-        if path == "/api/v1/swarm/simulate":
-            try:
-                body = self._read_json_body()
-                result = self.controller.simulate(
-                    vus=int(body.get("vus", 50)),
-                    duration_sec=float(body.get("duration_sec", 30.0)),
-                    target_host=str(body.get("target_host", DEFAULT_TARGET_HOST)),
-                    persona_weights=body.get("persona_weights"),
-                    mode=str(body.get("mode", "deterministic")),
-                    seed=body.get("seed", 42),
-                    apdex_t_ms=float(body.get("apdex_t_ms", DEFAULT_APDEX_T_MS)),
-                    slo_p95_ms=float(body.get("slo_p95_ms", DEFAULT_SLO_P95_MS)),
-                )
-                self._send_json(200, result)
-            except (ValueError, json.JSONDecodeError) as exc:
-                self._send_json(
-                    400,
-                    {
-                        "error": "bad_request",
-                        "message": str(exc),
-                    },
-                )
+        route = _ROUTE_INDEX.get((method, path))
+        if route is None:
+            self._send_json(
+                404,
+                {
+                    "error": "not_found",
+                    "message": f"Route {path} not found",
+                },
+            )
             return
+        getattr(self, route.handler)(parse_qs(parsed.query))
 
+    def _get_health(self, query: Dict[str, list]) -> None:
         self._send_json(
-            404,
+            200,
             {
-                "error": "not_found",
-                "message": f"Route {path} not found",
+                "status": "ok",
+                "service": SERVICE_NAME,
+                "version": SERVICE_VERSION,
             },
         )
+
+    def _get_personas(self, query: Dict[str, list]) -> None:
+        self._send_json(200, self.controller.get_personas())
+
+    def _get_runs(self, query: Dict[str, list]) -> None:
+        limit = int(query.get("limit", ["25"])[0])
+        runs = self.controller.get_runs(limit=limit)
+        self._send_json(
+            200,
+            {
+                "service": SERVICE_NAME,
+                "count": len(runs),
+                "runs": runs,
+            },
+        )
+
+    def _post_simulate(self, query: Dict[str, list]) -> None:
+        try:
+            body = self._read_json_body()
+            result = self.controller.simulate(
+                vus=int(body.get("vus", 50)),
+                duration_sec=float(body.get("duration_sec", 30.0)),
+                target_host=str(body.get("target_host", DEFAULT_TARGET_HOST)),
+                persona_weights=body.get("persona_weights"),
+                mode=str(body.get("mode", "deterministic")),
+                seed=body.get("seed", 42),
+                apdex_t_ms=float(body.get("apdex_t_ms", DEFAULT_APDEX_T_MS)),
+                slo_p95_ms=float(body.get("slo_p95_ms", DEFAULT_SLO_P95_MS)),
+            )
+            self._send_json(200, result)
+        except (ValueError, json.JSONDecodeError) as exc:
+            self._send_json(
+                400,
+                {
+                    "error": "bad_request",
+                    "message": str(exc),
+                },
+            )
 
 
 def create_server(

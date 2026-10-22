@@ -6,3 +6,8 @@ __pycache__/
 .env
 node_modules/
 .DS_Store
+.venv/
+*.log
+# local config — only .env.example is tracked
+.env.*
+!.env.example

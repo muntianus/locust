@@ -6,28 +6,36 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    name: Python Swarm & Locust Verification
+    name: Locust swarm tests + API contract
     runs-on: [self-hosted, linux, x64, hostinger-vps]
     timeout-minutes: 15
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: "3.12"
-
-      - name: Run unit and HTTP integration tests
+      - name: Byte-compile
+        run: python3 -m compileall -q swarm_service tools tests locustfile.py .github/scripts
+      - name: Unit, HTTP and contract tests
         run: python3 -m unittest discover -s tests -v
-
       - name: Smoke test swarm API against a local mock target
-        # Offline by default: the driver boots tools/mock_target.py on 127.0.0.1 and points
-        # the swarm at it. Ephemeral ports are used, so it cannot collide with the prod
-        # swarm service on 4070. Set the repo variable SMOKE_TARGET_HOST to smoke a real
-        # environment instead; no external domain is contacted unless it is set.
         env:
           TARGET_HOST: ${{ vars.SMOKE_TARGET_HOST }}
         run: python3 .github/scripts/ci_smoke.py
+
+  security:
+    uses: muntianus/.github/.github/workflows/reusable-security-gate.yml@72f1a15326dc0cb34a352adf3e9558b864904c27 # main
+    # the gate declares pull-requests: read at workflow level; a caller
+    # granting less makes the run fail at startup
+    permissions:
+      contents: read
+      pull-requests: read

@@ -86,6 +86,17 @@ Smoke knobs (all optional): `SMOKE_VUS` (default `10`), `SMOKE_DURATION_SEC` (`5
 `MOCK_DELAY_MS` (`0`). Thresholds are intentionally slack — the smoke is a liveness and
 contract check, not a latency benchmark.
 
+## API contract, CI & deploy
+
+- **Contract:** [`docs/api/openapi.json`](docs/api/openapi.json) (OpenAPI 3.1).
+  `tests/test_openapi_contract.py` fails when `ROUTES` in `swarm_service/server.py` and the spec disagree.
+- **Tests:** `python3 -m unittest discover -s tests -v`. CI runs it plus the org security gate (gitleaks) on every
+  pull request.
+- **Config:** every environment variable is listed in [`.env.example`](.env.example).
+- **Deploy:** `docker build -t locust . && docker run -p 4070:4070 locust` — non-root,
+  `HEALTHCHECK` on `GET /health`. The portfolio port map lives in
+  [`muntianus/architecture`](https://github.com/muntianus/architecture).
+
 ## Contact / Support
 
 PerfOps official Telegram contact: [@perfops_ai_manager](https://t.me/perfops_ai_manager).
