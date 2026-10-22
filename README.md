@@ -90,8 +90,8 @@ contract check, not a latency benchmark.
 
 - **Contract:** [`docs/api/openapi.json`](docs/api/openapi.json) (OpenAPI 3.1).
   `tests/test_openapi_contract.py` fails when `ROUTES` in `swarm_service/server.py` and the spec disagree.
-- **Tests:** `python3 -m unittest discover -s tests -v`. CI runs it plus the org security gate (gitleaks) on every
-  pull request.
+- **Tests:** `python3 -m unittest discover -s tests -v`. CI runs it on every pull request;
+  GitGuardian scans each one for secrets.
 - **Config:** every environment variable is listed in [`.env.example`](.env.example).
 - **Deploy:** `docker build -t locust . && docker run -p 4070:4070 locust` — non-root,
   `HEALTHCHECK` on `GET /health`. The portfolio port map lives in
