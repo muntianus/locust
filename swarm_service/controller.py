@@ -77,6 +77,16 @@ def compute_apdex(samples: Sequence[float], target_t_ms: float = DEFAULT_APDEX_T
     return round(max(0.0, min(1.0, score)), 4)
 
 
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Report a 3xx as-is instead of following it to a host nobody validated."""
+
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_RefuseRedirects)
+
+
 class SwarmController:
     """B2B User Swarm simulation and live HTTP probing engine."""
 
@@ -139,7 +149,7 @@ class SwarmController:
             req_headers["Content-Type"] = "application/json"
 
         req = urllib.request.Request(url=url, data=body_bytes, headers=req_headers, method=method.upper())
-        opener = http_opener or urllib.request.urlopen
+        opener = http_opener or _NO_REDIRECT_OPENER.open
         start = time.perf_counter()
         try:
             with opener(req, timeout=timeout_sec) as resp:

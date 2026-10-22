@@ -5,6 +5,17 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- `POST /api/v1/swarm/simulate` with `mode: live_probe` only probes `target_host`s whose host is
+  in `SWARM_ALLOWED_TARGET_HOSTS` (default: public globlex.* / perfops.* hosts) over http(s), and
+  no longer follows redirects; anything else is 403 `forbidden_target`. Previously any caller
+  could make the service probe internal addresses and report status codes and latency.
+
+### Fixed
+
+- `GET /api/v1/swarm/runs?limit=<non-integer>` falls back to 25 instead of dropping the connection.
+
 ### Changed
 
 - Adopted the muntianus Repository Standard v1: committed OpenAPI contract

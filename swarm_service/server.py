@@ -22,6 +22,31 @@ SERVICE_NAME = "perfops-locust-swarm"
 SERVICE_VERSION = "1.0.0"
 DEFAULT_PORT = 4070
 
+# Hosts `mode: live_probe` may send requests to. Anything else (internal
+# addresses, metadata endpoints, other sites) is refused so the swarm cannot be
+# used as an SSRF / port-scanning proxy. Override with SWARM_ALLOWED_TARGET_HOSTS
+# (comma-separated hostnames, exact match).
+DEFAULT_ALLOWED_TARGET_HOSTS: Tuple[str, ...] = (
+    "api.globlex.pro",
+    "globlex.pro",
+    "globlex.shop",
+    "globlex.online",
+    "perfops.tech",
+    "app.perfops.tech",
+    "perfops.shop",
+    "aco.perfops.shop",
+    "perfops.ai",
+)
+
+
+def parse_allowed_target_hosts(raw: Optional[str]) -> Tuple[str, ...]:
+    hosts = tuple(h.strip().lower() for h in (raw or "").split(",") if h.strip())
+    return hosts or DEFAULT_ALLOWED_TARGET_HOSTS
+
+
+class TargetNotAllowed(ValueError):
+    """target_host failed the live_probe policy (wrong scheme or host)."""
+
 
 class Route(NamedTuple):
     method: str
@@ -45,6 +70,7 @@ class SwarmRequestHandler(BaseHTTPRequestHandler):
     """HTTP request handler for PerfOps Locust B2B Swarm Controller."""
 
     controller: SwarmController = SwarmController()
+    allowed_target_hosts: Tuple[str, ...] = DEFAULT_ALLOWED_TARGET_HOSTS
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         if os.environ.get("SWARM_QUIET_LOGS") == "1":
@@ -114,7 +140,10 @@ class SwarmRequestHandler(BaseHTTPRequestHandler):
         self._send_json(200, self.controller.get_personas())
 
     def _get_runs(self, query: Dict[str, list]) -> None:
-        limit = int(query.get("limit", ["25"])[0])
+        try:
+            limit = int(query.get("limit", ["25"])[0])
+        except ValueError:
+            limit = 25
         runs = self.controller.get_runs(limit=limit)
         self._send_json(
             200,
@@ -128,17 +157,23 @@ class SwarmRequestHandler(BaseHTTPRequestHandler):
     def _post_simulate(self, query: Dict[str, list]) -> None:
         try:
             body = self._read_json_body()
+            target_host = str(body.get("target_host", DEFAULT_TARGET_HOST))
+            mode = str(body.get("mode", "deterministic"))
+            if mode == "live_probe":
+                self._assert_target_allowed(target_host)
             result = self.controller.simulate(
                 vus=int(body.get("vus", 50)),
                 duration_sec=float(body.get("duration_sec", 30.0)),
-                target_host=str(body.get("target_host", DEFAULT_TARGET_HOST)),
+                target_host=target_host,
                 persona_weights=body.get("persona_weights"),
-                mode=str(body.get("mode", "deterministic")),
+                mode=mode,
                 seed=body.get("seed", 42),
                 apdex_t_ms=float(body.get("apdex_t_ms", DEFAULT_APDEX_T_MS)),
                 slo_p95_ms=float(body.get("slo_p95_ms", DEFAULT_SLO_P95_MS)),
             )
             self._send_json(200, result)
+        except TargetNotAllowed as exc:
+            self._send_json(403, {"error": "forbidden_target", "message": str(exc)})
         except (ValueError, json.JSONDecodeError) as exc:
             self._send_json(
                 400,
@@ -148,17 +183,29 @@ class SwarmRequestHandler(BaseHTTPRequestHandler):
                 },
             )
 
+    def _assert_target_allowed(self, target_host: str) -> None:
+        parsed = urlparse(target_host)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise TargetNotAllowed("target_host must be an absolute http(s) URL")
+        if parsed.hostname.lower() not in self.allowed_target_hosts:
+            raise TargetNotAllowed(
+                f"target_host {parsed.hostname} is not allowed for live_probe (SWARM_ALLOWED_TARGET_HOSTS)"
+            )
+
 
 def create_server(
     host: str = "0.0.0.0",
     port: int = DEFAULT_PORT,
     controller: Optional[SwarmController] = None,
+    allowed_target_hosts: Optional[Tuple[str, ...]] = None,
 ) -> Tuple[ThreadingHTTPServer, SwarmController]:
     """Create a ThreadingHTTPServer bound to (host, port) with an isolated SwarmController."""
     ctrl = controller or SwarmController()
+    allowed = allowed_target_hosts or parse_allowed_target_hosts(os.environ.get("SWARM_ALLOWED_TARGET_HOSTS"))
 
     class BoundHandler(SwarmRequestHandler):
         controller = ctrl
+        allowed_target_hosts = allowed
 
     server = ThreadingHTTPServer((host, int(port)), BoundHandler)
     return server, ctrl
