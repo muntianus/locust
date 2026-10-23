@@ -108,7 +108,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Maximum runs to return",
+            "description": "Maximum runs to return; non-integers fall back to 25",
             "schema": {
               "type": "integer",
               "minimum": 1,
@@ -152,7 +152,7 @@
       "post": {
         "operationId": "simulateSwarm",
         "summary": "Simulate a persona-weighted B2B user swarm and evaluate SLO / Apdex",
-        "description": "`deterministic` (default) models latency offline. `live_probe` additionally sends one request per persona endpoint to `target_host`.",
+        "description": "`deterministic` (default) models latency offline. `live_probe` additionally sends one request per persona endpoint to `target_host`, which must be an http(s) URL whose host is in SWARM_ALLOWED_TARGET_HOSTS (default: the portfolio's public globlex.* / perfops.* hosts); redirects are not followed.",
         "tags": [
           "swarm"
         ],
@@ -185,6 +185,16 @@
           },
           "400": {
             "description": "Invalid parameters or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "live_probe target_host is not an allowlisted http(s) host",
             "content": {
               "application/json": {
                 "schema": {
